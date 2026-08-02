@@ -1,0 +1,238 @@
+JPA는 트랙터에 비유할 수가 있다. 
+개발 트랜드의 변화
+1. 순수 JDBC : 모든 SQL문 개발자가 작성/객체-테이블 매핑도 개발자가 일일이 다함
+2. JDBC Templete, MyBatis : 객체-테이블 매핑 자동화/여전히 모든 SQL문을 개발자가 작성
+3. JPA를 비롯한 ORM : 모든 SQL문 자동화/객체-테이블 매핑 자동화
+-> 즉, JPA가 등장하고 나서, 개발 생산성/유지 보수성 존나게!! 그러나 사용하는 데에 있어서 많은 지식/학습이 필요(트랙터와 유사! 밭 가는 속도는 존나 빨라 졌지만, 그대신 트랙터의 사용법을 알아야 한다)
+
+JPA가 실무에서 어려운 구체적인 이유
+1. 튜토리얼만 보면 JPA로 굉장히 쉽고 빠르게 개발을 할 수 있을 것 같아서 실무에 바로 도입을 하면 100프로 망한다. 
+-> 왜냐하면 결론부터 말을 하면 객체-테이블 매핑이 잘 되게 설계하는 법을 몰라서 그렇다. 실무에는 테이블과 객체의 종류가 수십 가지가 된다. 즉 정말 복잡하게 유기적으로 돌아가야 한다. 
+그래서 튜토리얼처럼 테이블 1,2개를 전제로 하는 예제 코드만 보고 실무를 도입하는 하면 망한다.
+그래서 강의에서는 객체-테이블을 제대로 매핑하도록 설계하는 법을 배운다. 
+
+2. JPA 내부 동작 방식을 이해x
+-> 내부 동작을 모르니, 잘 다룰리가...
+
+※참고로, 최신의 스프링 공식 예제도 JPA가 기본 적용돼 있다.(JPA는 자바 웹 개발자의 기본이다)
+
+
+SQL 중심 개발의 문제점
+1. 현대는 애플리케이션 코드는 객체지향, 데이터베이스는 관계형 데이터베이스이다. 이 말은 지금 시대는 객체를 관계형 데이터 베이스에 저장하는 시대라는 뜻이다. 
+-> 그래서 객체마다 이걸 SQL문으로 전환하는 코드를 모든 객체마다 다 일일이 만들어 줘야 한다는 것이다. 이 과정에서 반복되는 SQL문을 개발자가 일일이 객체에 맞게
+직접 작정해야 한다는 점이다. 실무에서는 도메인 객체가 수십 개가 되는 데 각 도메인 객체에 맞게 일일이 SQL문을 다 작성해야 한다(INSERT, UPDATE, DELETE, 객체->SQL 전환 코드, SQL->객체 전환 코드 등)
+이 과정은 생산성의 문제는 물론 유지보수 측면에서도 문제가 있다. 만약에 회원 도메인 객체에 필드명의 변경이 되면 모든 SQL문에 변경을 반영시켜 줘야 하고, 또 필드가 추가/삭제 되면 또 그때마다 모든 SQL문을 다 수정해야 한다. 
+
+2. 패러다임 불일치 문제
+1에서 언급했듯이 현대 애플리케이션 코드는 객체지향 개발이다. 그 말의 의미는 각 도메인 객체를 개발자가 관계형 데이터베이스에 맞게 SQL문을 일일이 매핑을 해줘야 하는 것이다. 
+INSERT,UPDATE,DELETE문 등을 일일이 객체에 맞게 변환시켜줘야 한다는 것이다. 
+그럼 왜 이런 변환이 반드시 필요한 걸까? 그건 객체지향과 데이터 베이스의 패러다임의 차이 떄문이다.
+
+객체와 관계형 데이터 베이스의 패러다임 4가지 차이(상속/연관 관계만 설명 하겠다)
+1. 상속
+자바 객체에는 상속 개념이 있지만, 관계형 데이터 베이스에는 상속 개념이 없다. 그래서 생기는 매우 귀찮은 문제가 있다. 
+예를 들어 Album이라는 객체가 있고, 그 객체는 Item이라는 객체를 상속받고 있다고 하자!!(강의 자료의 그림을 참조)
+그럼 Album 객체를 RDB에 저장하기 위해서는 Album 객체를 Item과 Album 객체로 분해를 해서 CRUD SQL문을 만들어 줘야 한다. 
+ex) 
+INSERT ITEM....
+INSERT Album....
+-> 근데 만약에 Album의 상속 관계가 매우 복잡하면?? 상상만 해도 끔찍하다. 
+더 끔찍한 것은 SELECT문이다. ITEM, ALBUM 테이블을 서로 막 조인하고 각각의 객체를 생성해서 매핑해주고 그걸 또 다시 상속 시키고등등 매우 복잡하다. 
+※ 그래서 RDB에 저장할 객체에는 절대 상속 관계 객체를 쓰지 않는다. (즉, DAO는 절대 상속 관계 객체여서는 안된다)
+DAO(Data Access Object)는 데이터베이스에 접근하는 책임만 담당하는 객체
+
+
+만약에 자바 컬렉션을 DB라고 한다면????
+INSERT문
+list.add(album);
+
+SELECT문
+Album album = list.get(albumId);
+Item item = list.get(albumId);
+-> 매우 간단하다(컬렉션 이야기를 하는 것은 前振り이니깐 지금은 이 이야기를 왜 하는지 이해 못해도 된다)
+
+
+
+2. 연관 관계(강의 자료의 연관 관계 구조를 확인, 그리고 연관 관계 != 상속 관계에 주의)
+객체의 연관 관계 : 참조 사용
+테이블의 연관 관계 : FK 사용(JOIN ON M.TEAM_ID = T.TEAM_ID)
+※지금부터는 아래의 내용을 읽으면서는, 객체답게 DAO를 모델링할 수록 개발 코드가 복잡해짐에 초점을 맞춰서 읽자.!!
+
+객체 모델링1 - 테이블에 맞추어 객체를 모델링(보통 많이 사용, 이래서 좋은 애플리케이션 코드는 좋은 테이블 설계에서 시작한다는 건가?)
+-> 이건 굉장히 테이블에 종속적인 객체이다. 테이블 변경될 떄마다 모든 해당 변경 사항을 모든 객체에 다 적용해야 한다.(이 방식은 객체 지향적 애플리케이션과는 거리가 있다)
+
+class Member {
+ String id;  //MEMBER_ID 컬럼으로 사용
+ Long teamId; //TEAM_ID FK 컬럼으로 사용 //**
+ String username;//USERNAME 컬럼으로 사용
+}
+
+class Team {
+ Long id; //TEAM_ID PK로 사용
+ String name; //NAME 컬럼으로 사용
+}
+
+
+테이블에 맞춘 객체의 INSERT
+class Member {
+ String id; //MEMBER_ID 컬럼 사용
+ 
+ Long teamId; //TEAM_ID FK 컬럼 사용 //**
+ 
+String username;//USERNAME 컬럼 사용
+}
+INSERT INTO MEMBER(MEMBER_ID, 【TEAM_ID】, USERNAME) VALUES …
+-> SQL문 작성에는 문제가 없다. 
+
+
+객체 모델링2 : 객체다운 모델링(DB에 전혀 종속적이지 않음)
+class Member {
+ String id; //MEMBER_ID 컬럼 사용
+
+ Team team; //참조로 연관관계를 맺는다. 
+
+ String username;//USERNAME 컬럼 사용
+ 
+ Team getTeam() {
+     return team;
+ }
+}
+
+class Team {
+ Long id; //TEAM_ID PK 사용
+
+ String name; //NAME 컬럼 사용
+}
+
+객체다운 객체의 INSERT
+class Member {
+ String id; //MEMBER_ID 컬럼 사용
+
+ Team team; //참조로 연관관계를 맺는다. 
+
+ String username;//USERNAME 컬럼 사용
+}
+INSERT INTO MEMBER(MEMBER_ID, 【TEAM_ID】, USERNAME) VALUES …
+-> ??? SQL은 TEAM_ID가 필요한데 Member 객체는 teamId를 가지고 있지 않다.
+물론 member.getTeam().getId()을 통해 TEAM_ID를 조회하면 되기는 하다. 근데 매우 코드가 번잡해 진다. 
+
+SELECT는 더 번잡하다
+ex)
+SELECT M.*, T.*
+ FROM MEMBER M
+ JOIN TEAM T ON M.TEAM_ID = T.TEAM_ID
+
+public Member find(String memberId) {
+ // 위의 SQL문 실행
+
+ Member member = new Member();
+
+ //데이터베이스에서 조회한 회원 관련 정보를 모두 입력
+ Team team = new Team();
+
+ //데이터베이스에서 조회한 팀 관련 정보를 모두 입력
+ //회원과 팀 관계 설정
+ member.setTeam(team);
+
+ return member; // 애플리케이션은 객체 지향이니깐 객체를 반환해야 한다. 
+}
+-> 결과로 돌아온 SQL문을 객체로 일일이 매핑을 해줘야 한다. 
+이런 모든 문제점이 객체와 RDB의 연관 관계 패러다임의 불일치에서 생기는 것이다. 
+
+만약 컬렉션을 DB라고 생각한다면?
+//INSERT문
+list.add(member);
+
+// SELECT문
+Member member = list.get(memberId);
+Team team = member.getTeam()
+-> 매우 편리하다. 
+
+객체 모델링2의 또 다른 문제점
+-> 객체 그래프 완전 탐색이 매우 어렵다(강의 자료 그림 확인). 애플리케이션에서는 Member 객체의 연관 관계에 있는 모든 객체를 자유롭게 탐색할 수가 있어야 한다. 
+그러나 객체 모델링2 방식이 왜 그게 어려운지 지금부터 알아 보자!!
+
+// 레포지토리 계층
+SELECT M.*, T.*
+ FROM MEMBER M
+ JOIN TEAM T ON M.TEAM_ID = T.TEAM_ID
+-> RDBMS에서 Member와 연관 관계인 데이터는 JOIN으로 조회한다고 하였다. 즉 레포지토리에 위 SQL문으로 정의돼 있는 이상
+Member와 연관 객체인 Team 객체만 탐색이 가능하다. 그래서 아래처럼 서비스 계층에서 getOrder()를 통해 Team 의 연관 객체를 조회하려고 
+해도 null이 반환이 된다. 이로 인해 객체 모델리2는 엔티티(DAO)의 신뢰성 문제가 생겨 버린다. 서비스 계층 구현을 담당하는 개발자가
+레포지토리로 직접 들어가서 SQL문을 일일이 보면 어떤 테이블이 조인돼 있는 지 일일이 확인하고 개발을 해야 한다는 것이다. 
+그러나 위에서도 언급을 했듯이, 애플리케이션 코드에서는 반드시 모든 연관 관계 객체를 탐색 가능해야 한다. 
+이래서 서비스 계층의 아래와 같은 코드가 반드시 정상 실행됨이 보장이 돼어야 하는데 그렇지 못하고 있다. 
+
+
+// 서비스 계층
+member.getTeam(); //OK
+member.getOrder(); //null
+
+문제는 그렇다고 Member의 모든 연관 관계를 미리 다 로딩할 수는 없다. 
+그래서 아래와 같이 메서드에 따른 SQL문을 레포지토리에서 다 따로 만들어야 한다. 
+즉, 진정한 의미의 계층 분할이 어려워 진다. 
+
+// 서비스 계층
+memberDAO.getMember(); //Member만 조회
+memberDAO.getMemberWithTeam();//Member와 Team 조회
+memberDAO.getMemberWithOrderWithDelivery();
+
+객체 비교하기
+String memberId = "100";
+Member member1 = memberDAO.getMember(memberId);
+Member member2 = memberDAO.getMember(memberId);
+
+【member1 == member2; //다르다.】　// 애플리케이션 코드만 보면 member1과 member2는 반드시 같아야 한다.
+  				// 그러나 아래의 getMember를 보면 알겠지만 메서드가 실행될 떄마다 새로운 SQL이 실행되서 그떄마다 새로운 객체가 반환이 되므로 서로 다른 객체가 되버린다. 
+
+class MemberDAO {
+ 
+ public Member getMember(String memberId) {
+ String sql = "SELECT * FROM MEMBER WHERE MEMBER_ID = ?";
+ ...
+ //JDBC API, SQL 실행
+ return new Member(...);
+ }
+}
+
+객체 비교하기 - 자바 컬렉션을 DB라고 생각하고 SELECT!!하면???
+String memberId = "100";
+Member member1 = list.get(memberId);
+Member member2 = list.get(memberId);
+
+member1 == member2; //같다.
+
+자~~~ 이게 본론을 말하겠따. "애플리케이션 코드를 객체지향답게 모델링하면 할 수록 DB 작업이 매우 어렵고 매핑 작업만 들어난다."
+
+그래서 개발자들은 생각했다. "애플리케이션 코드를 객체지향성을 절대 무너뜨리지 않으면서, RDB를 사용할 수는 없을까?,
+자바 컬렉션 처럼 DB를 이용할 수 있으면 참...좋을텐데..에휴ㅜ.... 어??? 오???? JPA를 이용해서 애플리케이션에서 SQL 중식 개발의 문제점
+의 이러한 문제를 해결하면 되지 않을까?? 컬렉션 처럼 사용할 수 있게???" 
+
+
+3. 데이터 타입
+4. 데이터 식별 방법
+
+
+
+JPA
+-> 애플리케이션 코드와 RDB 사이에서 객체-테이블 매핑을 해준다. 
+이 과정에서 JPA는 위에서 살펴보았던 SQL 중심 개발의 문제점을 모두 해결해 준다. 
+내 개인적으로 JPA의 가장 큰 장점은 애플리케이션 코드는 그대로 객체 지향적 설계가 가능하게 하고 RDB 설계는 RDB 설계대로 가능하게 하여서
+현대 프로그래밍의 패러다임을 전혀 꺠뜨리지 않게 한다는 점인 것 같아. 
+
+
+
+JPA를 사용하는 이유(강의 자료 참조)
+1. SQL 중심 개발 문제점의 해결
+2. 패러다임 불일치 문제 해결
+3. 성능
+-> JPA紹介 강의 19분 쯤에 언급을 했는데, 즉시/지연 로딩이 있는데, 일반적인 경우, 처음에는 그냥 즉시 로딩으로 설계를 하고, 나중에 지연 로딩으로 할지 즉시 로딩으로 유지할지를 정한다고 한다. 
+왜냐하면 설계 단계에서는 연관 관계 객체를 반드시 자주 사용할 지 안 할지 모르기 때문에, 나중에 만약 그 연관 관계 객체가 자주 안 쓰이고 하면 지연 로딩으로 바꾼다고 한다.
+
+4. 생산성
+5. 데이터 베이스 벤더 회사로 부터의 독립
+-> 이미 대부분의 데이터 베이스 벤더 회사가 JPA의 구현체를 만들어 놓았기 때문에 JPA 인터페이스에 갈아 끼우기만 하면 되고, 클라이언트 코드 변경이 없다. 
+
+
+
+
