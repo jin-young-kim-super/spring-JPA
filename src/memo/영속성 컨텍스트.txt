@@ -125,5 +125,30 @@ transaction.commit(); // [트랜잭션] 커밋 : flush/commit 시점에 영속�
 Q. setName, setAge은 UPDATE문일 텐데, 만약 다른 트랜잭션에서 해당 Member에 락을 걸어 놓은 상태라면 UPDATE는 락이 반환될 때까지 실행대기를 해야 하지 않나?
 A. UPDATE SQL 실행에 있어서는 flush/commit 시 다른 트랜잭션에서 Lock을 걸었으면 Lock이 반환될 떄까지 기다린다.
 
+Flush란?
+영속성 컨텍스트 내의 변경 내용을 데이터 베이스에 반영하는 것! 더 정확히는 쓰기 지연 SQL 저장소에 있는 모든 INSERT/UPDATE/DELETE 쿼리문 등을 데이터 베이스에 날려 주는 것이다.
+
+Flush 실행 흐름
+1. 변경 감지(Dirty Checking)
+2. 최종 수정된 쿼리문을 [쓰기 지연 SQL 저장소]에 등록
+3. 쓰기 지연 SQL 저장소에 있는 모든 쿼리문을 데이터 베이스에 날림(flush의 본질)
+
+영속성 컨텍스트를 flush하는 방법 3가지
+1. entityManger.flush() - 직접 호출(많이 사용하지는 않지만, 테스트 코드에서 자주 사용)
+2. 트랜잭션 커밋 - 자동 호출
+3. JPQL 실행 - 자동 호출(이 부분은 추후에 자세히 학습 예정)
+
+// memberA,B,C는 영속성 컨텍스트에만 현재 존재하고 데이터 베이스에는 아직 저장이 안 된 상태
+em.persist(memberA);
+em.persist(memberB);
+em.persist(memberC);
+
+//중간에 JPQL 실행(memberA,B,C를 데이터 베이스로부터 조회가 목적!!!)
+query = em.createQuery("select m from Member m", Member.class);
+List<Member> members= query.getResultList();
+-> 위 JPQL 실행 시점에는 데이터 베이스에 아직 영속성 컨텍스트 내의 memberA,B,C가 저장이 안 돼 있기에 아무것도 조회가 되지 않는 대참사가 일어난다.
+이러한 대참사를 방지하이 위하여 중간에 JPQL이 있을 떄에는 트랜잭션 내의 영속성 컨텍스트에 대해서 강제적으로 flush를 내부적으로 호출하여 데이터 베이스에 쿼리문을 실행시켜 버린다.
+
+
 
 5. 지연 로딩
