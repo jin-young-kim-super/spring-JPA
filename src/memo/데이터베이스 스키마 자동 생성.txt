@@ -1,0 +1,432 @@
+JPA는 애플리케이션 실행 시점에 엔티티의 에노테이션 정보를 바탕으로 자동으로 데이터 베이스 DDL 쿼리를 자동 생성해서 실행을 해준다. 
+※개발 서버에는 도움이 된다. 그러나 운영 서버에서는 절대 사용을 하면 안된다. 왜냐하면 운영 서버에서 애플리케이션이 빌드될 때마다 데이터 베이스 스키마가 새롭게 생성되버리면
+기존의 데이터를 다 날리고 데이터 베이스를 생성하기 떄문에 매우 위험한 짓이다. 그리고 테이블 설계는 가급적 건드리면 안된다. 
+
+장점
+1. 개발 환경 : 보통의 경우 개발 환경에서는 데이터 베이스 DDL을 실행한 후 애플리케이션 코드로 돌아와 작업을 하지만,
+데이터 베이스 스키마 자동 생성 기능을 사용하면 DDL을 실행해줄 필요가 없다.
+
+2. 데이터 베이스(이게 가장 중요) : 설정된 각 DB 벤더회사에 맞춘 DDL 쿼리문을 자동으로 생성을 해준다.(데이터 베이스 벤더로부터 독립성을 보장)
+
+persistence.xml에 설정 필요
+ <property name="hibernate.hbm2ddl.auto" value="create"/>
+-> 강의 자료에 나와 있지만 create말고 여러 스키마 생성 옵션이 있다. create의 경우 기본 테이블/데이터를 삭제하고 새로 테이블을 생성한다.
+
+update 옵션 : 기존 데이터 베이스의 테이블의 스키마와 엔티티의 구조를 비교하여 변경된 구조 부분만 데이터 베이스 테이블에 반영한다(기존 테이블/데이터 삭제 x)
+validate 옵션 : 기존 데이터 베이스 테이블 스키마와 엔티티 구조가 정상적으로 매핑됐는지 확인만 해준다.
+none 옵션 : 스키마 자동 생성 기능 사용하지 x
+
+
+스키마 자동 생성 기능 사용 전략
+
+・개발 초기 단계 : crate 또는 update
+
+・테스트 서버 : update 또는 validate
+-> 여러 개발자가 쓰는 테스트 서버에서 만약 create하면 어떤 개발자가 애플리케이션을 빌드할 때마다 테이블/데이터가 삭제되므로
+매우 위험하다
+
+・스테이징 서버 혹은 운영 서버 : validate 혹은 none 사용
+※김영한 왈 : 자기 경험 상 개발 환경이나 운영 서버에서 validate나 none이외에는 절대 사용하지 말고, 그냥 개발자가 직접 DDL문을 작성하는 것을 권한다고 한다.
+왜냐하면 alter table문 혹은 crate table은 기존 테이블/데이터의 구조를 변경하는 작업이다보니, 매우매우 조심해야 하는 작업이다.
+잘못된 스키마가 생성될 수고 있고, 애플리케이션 로딩 시점에 테이블 자동 생성 실행이 5분만 되어도 그 동안 시스템은 이용이 불가능하니깐 엄청난 피해를 입는다.
+그래서 데이터 베이스 스키마 생성을 할 떄 직접 개발자가 DDL문을 작성해서 개발 환경 -> 스테이징 환경에서 문제가 없으면 운영서버에 적용하는 것을 권한다고 한다.
+왜냐하면 직접 개발한 DDL문이 운영서버에 넣기 위해서는 개발 환경과 스테이징 환경에서도 개발자가 직접 짠 DDL문이 문제 없이 실행되는 지를 확인해야 하기 때문이다.
+결론 : DDL문은 자동 생성하지 말고 개발자가 직접 짜자.
+김영한 팁 : DDL문을 직접 짜는 건 귀찮으니, JPA가 직접 짠 로그 DDL문을 복사해서, 회사 룰 등에 맞춰서 다듬어서 사용을 한다고 한다.
+
+한 문장으로 정리
+-> 운영 서버에서 스키마 자동 생성 기능을 사용하지 않는 이유는, ORM이 데이터 정의(DDL)를   【추론(ORM은 기존 DB의 스키마를 보지 않기 때문에 추론을 할 수밖에 없다. 이 내용은 아래를 읽으면 이해가 된다)】 혹은 【순차 실행에 의해 발생하는 중간상태】 때문에 데이터 손실, 중간 상태 발생, 의도하지 않은 스키마 변경 위험이 있으며,
+운영 환경에서는 스키마 변경을 【버전 관리와 배포 절차 아래에서 통제(=Flyway/Liquibase + SQL 마이그레이션)】해야 하기 때문이다.(즉, 추론/순차 실행이 원인이다)　
+이걸 이해하면 왜 대기업들이 Flyway/Liquibase + SQL 마이그레이션을 거의 표준처럼 사용하는지도 자연스럽게 연결된다.
+
+구체적인 설명
+1. 데이터가 날아갈 수 있다 (가장 치명적)
+예를 들어 운영 DB에 실제 고객 데이터가 있다.
+MEMBER
+id | name
+---------
+1  | Kim
+2  | Lee
+그런데 실수로: hibernate.hbm2ddl.auto=create를 넣고 서버를 배포했다.
+
+Hibernate는 서버 시작 시:
+DROP TABLE MEMBER;
+CREATE TABLE MEMBER (...);
+를 실행한다.
+
+결과:회원 데이터 전부 삭제
+-> 운영에서는 이 한 번의 설정 실수로 서비스가 끝날 수 있다. 그래서 운영에서는 DDL을 ORM에 맡기지 않는다.
+
+2. 스키마 변경이 원자적(Atomic)이지 않다
+Hibernate는 여러 DDL을 【순차적】으로 실행한다.
+예:
+ALTER TABLE MEMBER ADD COLUMN age INT;
+CREATE TABLE ORDERS (...);
+ALTER TABLE ORDERS
+ADD CONSTRAINT FK_MEMBER;
+
+이 DDL을 순차 실행 도중에는:
+ex)
+MEMBER는 수정됨
+ORDERS는 생성됨
+FK는 아직 없음(ADD CONSTRAINT FK_MEMBER이 아직 실행 안됨) 이라는 중간 상태(中間状態) 가 존재한다.
+
+만약 이 순간 다른 서버나 요청이 들어오면:
+・FK 없는 데이터가 저장되거나
+・테이블이 없어서 오류가 나거나
+・인덱스가 없어 성능이 급격히 떨어질 수 있다.
+→　운영에서는 이런 불안정한 상태를 허용하지 않는다.
+
+3.스키마 변경은 배포 절차와 함께 관리해야 한다
+
+운영에서는 보통 이렇게 한다.
+
+개발자
+엔티티 수정
+↓
+SQL 작성
+ALTER TABLE MEMBER
+ADD COLUMN age INT;
+↓
+코드 리뷰
+↓
+테스트
+↓
+운영 배포
+↓
+DB 변경 적용 : 이 과정을 Flyway나 Liquibase 같은 마이그레이션 도구가 관리한다.
+예:
+V1__create_member.sql
+V2__add_age_column.sql
+V3__create_orders.sql
+이렇게 버전이 남는다.
+장점:
+・누가 언제 변경했는지 추적 가능
+・실패 시 복구 가능
+・여러 서버에서 동일하게 적용 가능
+・롤백 전략 수립 가능
+
+※실무에서 실제로 더 무서운 경우
+
+예를 들어 엔티티에서:
+private String name를 private String username로 변경했다.
+
+Hibernate가 update 옵션으로 추론하면:
+DB 벤더에 따라:
+・컬럼 이름 변경(밑에서 구체적으로 설명함)
+・새 컬럼 생성(밑에서 구체적으로 설명함)
+・기존 컬럼 유지(밑에서 구체적으로 설명함)
+중 어떤 동작을 할지 개발자 입장에서는 예측이 애매할 수 있다. 즉 Hibernate의 추론이 개발자의 의도와 다를 수 있다.
+그래서 운영에서는 “추론” 자체를 신뢰하지 않는다. 그래서 운영 서버에서 DDL은 사람이 명시적으로 작성한다.
+
+
+
+ORM DDL 실행 시의 추론의 구체적인 문제점
+-> 예를 들어 현재 운영 DB가 다음 상태라고 하자.
+
+MEMBER
+-------------------------
+id      BIGINT
+name    VARCHAR(255)
+
+그리고 JPA 엔티티가:
+@Entity
+@Table(name = "MEMBER")
+public class Member {
+
+    @Id
+    private Long id;
+
+    private String name;
+}였다.
+
+케이스 1. ORM의 DDL을 통해 컬럼 이름 변경 (Rename)시 발생 가능한 문제
+개발자가 엔티티를 이렇게 수정했다.
+@Entity
+@Table(name = "MEMBER")
+public class Member {
+
+    @Id
+    private Long id;
+
+    private String username;   // name -> username
+}
+
+개발자의 의도는 DB 컬럼 name을 username으로 변경하고 싶다.
+
+실제로 원하는 SQL은:
+ALTER TABLE MEMBER
+RENAME COLUMN name TO username이다.
+
+그런데 Hibernate의 update는 컬럼 이름이 바뀌었다는 사실을 알지 못한다. 왜냐하면 update옵션은 DB의 스키마를 보지 않기 때문이다.
+
+그래서 Hibernate 입장에서는:
+name 컬럼이 없어졌네?
+username 컬럼이 새로 생겼네?로 본다.
+
+그래서 어떤 DB에서는 다음처럼 동작할 수 있다.
+ALTER TABLE MEMBER
+ADD COLUMN username VARCHAR(255);
+
+결과:
+MEMBER
+-------------------------
+id
+name
+username
+
+그리고 기존 데이터:
+id | name | username
+-------------------------
+1  | Kim  | NULL
+즉 데이터가 자동으로 옮겨지지 않는다.
+
+케이스 2. ORM의 DDL을 통해 새 컬럼 생성!(사실, 이 문제는 잘 일어나지 않는다)
+
+이번에는 진짜 새 필드를 추가했다.
+@Entity
+@Table(name = "MEMBER")
+public class Member {
+
+    @Id
+    private Long id;
+
+    private String name;
+
+    private Integer age;   // 새 필드
+}
+
+Hibernate update:
+ALTER TABLE MEMBER
+ADD COLUMN age INTEGER;
+
+결과:
+
+MEMBER
+-------------------------
+id
+name
+age
+
+기존 데이터:
+
+id | name | age
+-------------------------
+1  | Kim  | NULL
+이 경우는 Hibernate가 비교적 잘 처리한다.
+
+케이스 3. ORM의 DDL을 통해 기존 컬럼 유지 (삭제 안 함)되는 문제점
+
+이번에는 필드를 제거했다.
+기존:
+private String name;
+private Integer age;
+
+수정:
+private String name;
+
+개발자의 의도: age 컬럼을 삭제하고 싶다.
+
+원하는 SQL:
+ALTER TABLE MEMBER
+DROP COLUMN age;
+
+하지만 Hibernate update는 기존 컬럼을 삭제하지 않는다. 왜냐하면 update옵션은 DB의 스키마를 보지 않기 때문이다.
+
+결과:
+MEMBER
+-------------------------
+id
+name
+age
+
+즉 DB에는 age 컬럼이 그대로 남아 있다.Hibernate는 운영 DB의 컬럼을 함부로 삭제하지 않는다.
+이건 오히려 안전을 위한 동작이다. 그러나 여전히 개발자의 의도와는 다른 동작을 하는 것이다.
+
+더 위험한 예 (타입 변경)
+
+기존:
+private Integer age;
+
+수정:
+private String age;
+
+원하는 SQL:
+ALTER TABLE MEMBER
+MODIFY age VARCHAR(255);
+
+Hibernate는 DB 벤더마다 타입 변경을 어떻게 해야 하는지 완전히 추론하기 어렵다.
+DB벤더에 따라:
+・변경
+・새 컬럼 생성
+・실패
+・아무것도 안 함　등이 발생할 수 있다.
+
+
+실무에서의 구체적인 운영 예시
+그래서 실무에서는
+
+Hibernate:hibernate.hbm2ddl.auto=validate
+
+Flyway:
+ALTER TABLE MEMBER
+ADD COLUMN username VARCHAR(255);
+
+UPDATE MEMBER
+SET username = name;
+
+ALTER TABLE MEMBER
+DROP COLUMN name; 이렇게 개발자가 명시적으로 데이터까지 이동시키면서 마이그레이션한다.
+
+Q. 그럼 위 같은 방법에서는 과연 중간 상태 같은 위험성이 존재하지 않냐?
+A. 무조건 발생한다. 그러나 개발자가 DDL문을 명시적으로 적는 과정에서 중간 상태였을 떄에도 서비스 실행에 아무 문제가 없게 고려해서 ddl문을 작성을 한다.
+예를 들겠다.
+Flyway : Flyway에서는 개발자가 직접 SQL을 작성한다.
+EX)
+-- V3__rename_name.sql
+ALTER TABLE MEMBER
+ADD COLUMN username VARCHAR(255);
+
+UPDATE MEMBER
+SET username = name;
+
+ALTER TABLE MEMBER
+DROP COLUMN name;
+
+여기서도 분명히:
+・username 추가
+・데이터 복사
+・name 삭제
+-> 위 과정 사이에 중간 상태가 존재한다.
+
+Q.그러면 ORM에 의한 DDL 자동 생성이랑 뭐가 다르냐?
+A. 결론부터 말을 하자면, "중간 상태를 없애는 것이 아니라, 하나의 DDL문을 여러 번에 나눠서 여러번 배포해서 중간 상태에서도 서비스가 깨지지 않도록 개발자가 설계하는 것이다"
+"또는 DB가 DDL 실행 시 트랜잭션위에서 동작한다는 점을 이용한다"
+
+여기가 진짜 핵심이다.
+
+Flyway는 “중간 상태를 설계한다.” 운영에서는 개발자가 “어떤 중간 상태는 안전하고, 어떤 중간 상태는 위험하다”를 판단한다.
+
+예를 들어 컬럼 이름 변경을
+
+위험한 방식
+ALTER TABLE MEMBER
+RENAME COLUMN name TO username;로 바로 하면
+
+기존 서버가 name을 사용 중일 때 즉시 장애가 난다.
+
+안전한 방식
+1단계:(배포1)
+
+ALTER TABLE MEMBER
+ADD COLUMN username VARCHAR(255);
+
+2단계:(배포2)
+
+UPDATE MEMBER
+SET username = name;
+
+3단계:(배포3)
+
+애플리케이션을 수정해서 username 사용
+
+4단계:(배포4)
+ALTER TABLE MEMBER
+DROP COLUMN name;
+
+이렇게 하면 중간 상태는 존재하지만, 그 상태에서도 서버는 정상 동작한다. 이걸 Expand-Contract Migration이라고 한다.
+
+트랜잭션을 이용한 DDL 운영법
+많은 DB는 DDL이 트랜잭션으로 묶인다.
+예를 들어 PostgreSQL:
+
+BEGIN; // 트랜잭션 시작
+
+ALTER TABLE ...;
+
+CREATE TABLE ...;
+
+ALTER TABLE ...;
+
+COMMIT; // 트랜잭션 종료
+이 가능하다. 그러면 다른 세션에서는 커밋 전까지 변경을 보지 못한다. 즉 중간 상태가 외부에 노출되지 않는다.
+
+
+엔티티 옵션의 2가지 종류
+・객체-테이블의 매핑 정보(mapping metadata) 옵션 → DDL 생성시에도 런타임에도 사용(런타임 때에 동적 SQL생성을 위해 반드시 이 매핑 정보가 필요하다)
+・스키마 제약 정보(schema metadata) 옵션 → DDL 생성 시에만 주로 사용
+-> 이런 옵션 구분이 중요한 이유는 "만약 DDL 생성 여부 옵션을 꺼놔도(auto=none)이여도 JPA가 런타임 때 동적 SQL을 생성하기위해서는 엔티티의 객체-테이블 매핑 정보가 여전히 사용됨을 환기시키기 위함"
+
+예를 들어 보자
+1. @Table(name="member") : name 옵션
+
+@Entity
+@Table(name = "member")
+public class Member {
+
+    @Id
+    private Long id;
+
+    private String name;
+}
+
+그리고 DDL 자동 생성을 꺼놓는다.(hibernate.hbm2ddl.auto=none)
+그럼에도 JPA는 애플리케이션 실행 시 다음 SQL을 만든다.
+select m.id, m.name
+from member m
+where m.id = ?
+
+왜? Hibernate가 엔티티의 name 옵션을 보고 "이 엔티티는 member 테이블에 매핑되어 있구나"라고 판단하여 SQL을 동적으로 생성하기 때문이다.
+즉 @Table(name="member")는 객체-테이블의 매핑 정보다.런타임 내내 사용된다.
+
+2. @Column(length=10, unique=true) : unique, length 등의 스키마 제약 옵션
+
+@Column(length = 10, unique = true)
+private String username;
+
+DDL 자동 생성이 켜져 있으면
+Hibernate는:
+create table member (
+    username varchar(10) unique
+);를 생성한다.
+
+그런데 DDL 자동 생성을 끄면
+Hibernate는 length=10을 보고 문자열을 잘라주지 않는다.
+예를 들어:
+member.setUsername("123456789012345")인 경우Hibernate는 그대로 DB에 보낸다.
+SQl문
+insert into member(username)
+values ('123456789012345');
+-> 길이 검사는 DB가 한다.
+
+즉 length=10은"테이블 생성할 때 VARCHAR(10)으로 만들어"라는 힌트에 가깝다.
+
+unique=true도 마찬가지
+
+DDL 생성 시:
+
+create table member (
+    username varchar(255),
+    unique(username)
+)가 만들어진다.
+
+하지만 런타임에서 Hibernate가
+
+if (username exists) throw ... 이런 검사를 하는 것은 아니다.
+-> 중복 검사는 DB의 UNIQUE 제약조건이 수행한다.
+
+
+[표 정리]
+엔티티 옵션                  DDL 생성 시          런타임 SQL 생성 시
+---------------------------------------------------------------
+@Table(name="member")        사용               사용
+@Column(name="user_name")    사용               사용
+@Column(length=10)           사용               거의 사용 안 함
+@Column(unique=true)         사용               거의 사용 안 함
+,,,,,,
+
+
+
+
+
+
