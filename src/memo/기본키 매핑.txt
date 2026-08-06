@@ -1,0 +1,95 @@
+기본 키 매핑 방법
+• 개발자가 기본기값을 직접 지정: @Id만 사용
+• DB가 기본키값을 자동 생성 : @Id와 더불어 (@GeneratedValue) 사용
+
+@GeneratedValue(strategy 옵션), 김영한 왈 : 이 부분이 자주 바뀐다고 하니 확인하고 사용하라고 함
+• IDENTITY: 데이터베이스에 위임, 주로 【　MYSQL, PostgreSQL, SQL Server, DB２　】에서 사용
+-> ex) MySQL에서는 이떄 AUTOINCREAMENT 사용
+
+• SEQUENCE: 데이터베이스 시퀀스 오브젝트 사용, 주로 【　오라클, PostgreSQL, DB2, H2 데이터베이스　】에서 사용
+-> @SequenceGenerator 필요
+
+• TABLE: 키 생성용 테이블 사용, 【　모든 DB　】에서 사용
+-> @TableGenerator 필요
+
+• AUTO: 방언에 따라 자동 지정(persistence.xml에 지정한 dialect를 보고 IDENTITY,SEQUENCE,TABLE 중에서 하나를 고른다)
+※기본키값 설정 전략을 고를 때 사용하는 DB가 무언인지를 고려하고 선택을 하자
+
+// IDENTITY 사용 예시
+@Entity
+public class Member {
+ @Id
+ @GeneratedValue(strategy = GenerationType.IDENTITY)
+ private Long id;
+
+
+// SEQUENCE 사용 예시
+@Entity
+@SequenceGenerator( name = “MEMBER_SEQ_GENERATOR",sequenceName = “MEMBER_SEQ", // 매핑할 데이터베이스 시퀀스 이름 initialValue = 1, allocationSize = 1) // DDL 시점에 이 시퀀스 [객체]가 DB에 저장이 된다.
+※ 각 엔티티마다 SEQUENCE 전략을 따로 설정하고 싶으면 각 엔티티마다 @SequenceGenerator를 사용해서 시퀀스 객체를 만들어 주면 된다.
+public class Member {
+     @Id
+     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "MEMBER_SEQ_GENERATOR") // 위 @SequenceGenerator에서 매핑한 시퀀스 객체 이름 지정
+     private Long id;
+ }
+
+
+
+// TABLE 전략(잘... 안씀)
+@Entity
+@TableGenerator(  name = "MEMBER_SEQ_GENERATOR", table = "MY_SEQUENCES", pkColumnValue = “MEMBER_SEQ", allocationSize = 1) // 이걸 통해 DDL 시점에 DB에 기본키값 생성용 [TABLE]이 생성된다.
+public class Member {
+     @Id
+     @GeneratedValue(strategy = GenerationType.TABLE, generator = "MEMBER_SEQ_GENERATOR")
+     private Long id;
+ }
+
+// Table 생성 SQL
+create table MY_SEQUENCES (
+ sequence_name varchar(255) not null,
+ next_val bigint,
+ primary key ( sequence_name )
+)
+
+장점 : 모든 DB에 적용 가능
+단점 : 성능
+-> 시퀀스나 아이엔티티는 성능 최적화가 잘 되어 있는 반면, TABLE 전략은 객체를 이용하는 게 아니라 아예 테이블을 이용한다. 그 과정에서 예를 들어 DB 락 같은 게 걸려 있을 수가 있기 때문에 성능 이슈에 많이 영향을 준다.
+
+
+식별자 전략
+@Id 필드는 되도록 Integer 말고 Long을 사용하자.
+-> Integer는 자바에서 10억까지 밖에 담을 수가 없다. 만약 DB에 기본키 값이 10억1일 경우, Integer로 애플리케이션에서 값 조회를 했을 때 오버플로우가 발생한다. 그래서 Long형을 담자.
+만약 Long 형도 안 된다고 하면, Long 형 + UUID 등(대리키)의 조합으로 변경하자.
+
+Identity 전략의 특징
+결론 : Buffer Writing 사용에 제약이 있다.
+영속성 컨텍스트 내에는 1차 캐시가 있다고 했다. 근데 객체를 저장할 떄는 항상 DB에 저장된 PK을 1차 캐시내에 사용을 한다.
+근데 만약 Identity 전략을 사용을 하게 될 경우 INSERT문의 경우 DB에 저장하기 전에는 JPA가 절대 DB에 어떤 PK값을 저장되어 있는지 모르기 때문에 1차 캐시에서 PK값을 세팅을 할 수가 없게 된다.(MYSQL의 autoIncreament를 떠욜려 봐라! 저장하기 전에는 PK값이 생성이 안되기 떄문에 저장전에는 모른다)
+그래서 Identity 전략 채택 시에 entityManager.persist(member)의 경우에 한해서는 트랜잭션 커밋 시점에 INSERT문이 실행되는 것이 아니라 persiste()를 만나는 순간 INSERT 쿼리문을 DB에 날려서 PK값을 받아와서 PK값을 저장을 한다
+※JPA도 결국에는 JDBC를 사용하는데 내부적으로 INSERT문 실행을 하면 PK값을 반환하도록 구현돼 있어서 PK값을 알기 위한 SELECT문을 따로 날리지 않는다.
+※김영한 왈 : Buffer Writing이 적용되지 않고 한 트랜잭션 내에서 persist 떄마다 쿼리문이 실행이 되더라도 그렇게 성능에 차이는 없다고 한다.
+
+SEQUECE 전략의 특징
+결론 : IDentity 전략과 달리 완전한 Buffer Writing이 가능
+SEQUECE 전략 시 persist를 만나면 내부적으로 SELECT nextval('member_seq');이라는 쿼리문이 DB로 날라가서 PK값을 들고 온다.(autoIncreament가 아니라, DB의 시퀀스 객체 내에서 다음 INSERT될 PK값을 이미 들고 있다)
+그래서 Identity처럼 persiste 때마다 INSERT문을 실행하지 않아도 1차 캐시에 저장할 PK값을 알 수가 있다.
+주의 : SELECT nextval 쿼리무이 실행된다고 해서 Buffer Writing(즉, 쓰기 지연 SQL문 기능)이 무너지는 게 절대 아니다.
+쓰기 지연 SQL문이란 개발자가 트랜잭션 내에서 명시적으로 적은 persist, find, delete에 의한 SQL문에 한해서 지원되는 기능이다. 고로 SELECT nextval이 실행됐다고 해도 트랜잭션 내의 SQL문은 커밋되는 순간 한 번에 날라간다.
+또한 하이버네이트의 SEQEUCE는 allocationSize=50이 디폴트로 설정이 돼 있다. 그래서 한번만 SELECT nextval을 하면 더이상의 SELECT nextval을 호출하지 않아도되니 성능에 큰 이점이 있다.
+ex)
+allocationSize
+예를 들어:
+@SequenceGenerator(
+    name = "member_seq",
+    sequenceName = "member_seq",
+    allocationSize = 50
+)이면 Hibernate는 ELECT nextval('member_seq')을 한 번만 호출하여 50개의 PK값을 메모리에 저장해 놓고, 사용한다.
+※Table 전략도 똑같은 특징이 있다
+
+
+
+
+
+
+
+
