@@ -1,0 +1,140 @@
+객체와 테이블을 엔티티 매핑하는 것은 그렇게 어렵지가 않았다. 
+그러나 자바에는 Enum, 컬렉션 타입 등 여러 특수 타입이 있어서 칼럼과 매핑 시 그렇게 쉽지만은 않다.
+이번에는 그 자바의 특스 타입에 대한 매핑법을 학습해 볼 것이다.
+
+
+
+@Column(unique=true)은 절대 사용하면 안된다.
+이유1. @Column(unique = true)는 단일 컬럼 UNIQUE만 표현할 수 있고, @Table(uniqueConstraints = ...)는 단일 컬럼뿐 아니라 복합(Composite) UNIQUE까지 표현할 수 있기 때문에 더 일반적이고 확장성이 있다.
+이유2. JPA가 최종적으로 DDL문을 만들었을 떄 제약조건 이름을 개발자가 지정 못해주고, JPA가 자동으로 만들어 주는데 그게 알기 어려운 제약 조건명으로 변환되기 때문애 운영 상황에서 만약 제약조건 떄문에 에러가 났을 때 그 제약 조건 이름을 보고 무슨 제약조건 에러인지 파악이 힘들다
+
+구체적 설명
+ex)
+
+// email 컬럼 1개에 대해서만 UNIQUE 제약을 걸 수가 있다. @Column(unique)로는 절대 복합 UNIQUE 제약조건을 못 만든다.
+@Column(unique = true)
+@Entity
+public class Member {
+
+    @Id
+    private Long id;
+
+    @Column(unique = true)
+    private String email;
+}
+
+DDL:
+create table member (
+    id bigint,
+    email varchar(255),
+    unique (email) // 단일 컬럼 제약 조건
+);
+이건 email 하나만 UNIQUE로 만든다.
+
+ex) 실무 사용법
+@Entity
+@Table(
+    uniqueConstraints = @UniqueConstraint(
+        name = "UK_MEMBER_EMAIL", // 개발자가 직접 제약조건명 명시 가능
+        columnNames = "email" // 제약 조건 걸음
+    )
+)
+public class Member {
+
+    @Id
+    private Long id;
+
+    private String email;
+}
+
+DDL:
+
+create table member (
+    id bigint,
+    email varchar(255),
+    constraint UK_MEMBER_EMAIL unique (email) // UK_MEMBER_EMAIL : 운영 서버에서 이 로그를 보면 "MEMBER 테이블의 EMAIL에서 UNIQUE 제약 조건이 걸렸구나"라고 바로 파악 가능
+);
+
+// 복합 유니크 제약조건 설정
+@Entity
+@Table(
+    uniqueConstraints = @UniqueConstraint(
+        name = "UK_COMPANY_EMAIL",
+        columnNames = {"company_id", "email"} // 비지니스 도메인이 "한 회사의 이메일은 유일해야 한다"라고 비지니스 로직이 변경이 되면 복합 제약조건을 걸어야 하는데 @Column(unique)는 단일 컬럼에 대해서먼 UNIQUE 조건을 걸 수가 있다.
+    )                                         // 실무에서는 이러한 비지니스 로직 변경에 의한 확장성을 위해 uniqueConstraints를 사용한다.
+)
+public class Member {
+
+    @Id
+    private Long id;
+
+    @Column(name = "company_id")
+    private Long companyId;
+
+    private String email;
+}
+
+DDL:
+
+constraint UK_COMPANY_EMAIL
+unique (company_id, email) // 복합 유니크 제약 조건
+
+
+
+@Enumerated(EnumType.ORDINAL) : @Enumberated의 기본값이 ORDINAL임에 주의
+-> Enum 타입에 대해서 절대 절대 절대 ENumType.ORIDINAL 사용하면 ㅈ된다.
+EnumType.ORDINAL : ENUM 순서를 데이터 베이스에 저장
+EnumType.STRING : ENUM 이름을 데이터 베이스에 저장
+
+ex)
+
+Member member = new Member()
+member.setRoleType(RoleTYpe.USER)
+entityManager.persiste(member);
+위 코드 실행 시 USER의 ENUM 타입 내의 순서를 데이터 베이스에 저장을 한다.
+
+DB
+RolTYPe
+========
+0 // USER의 순서 저장
+
+근데 만약 비지니스 로직 변경으로 인해, RoleTYpe 내에서 USER 앞에 GUEST가 추가가 됐다고 해보자.
+Member member = new Member()
+member.setRoleType(RoleTYpe.GUEST)
+entityManager.persiste(member);
+
+DB
+RolTYPe
+========
+0 // USER의 순서 저장
+0 // GUEST의 순서 저장??!!!!
+-> 이건 서로 다른 USER, RolType인데 DB상에서는 같은 데이터로 저장이 되버리는 미친 문제가 발생을 한다.
+이래서 반드시 Enum 타입은 EnumType.STRING으로 써줘야 한다.
+
+
+DB
+RolTYPe
+========
+USER
+GUEST
+
+
+@Temporal : JAVA 8 이상 그리고 최신 하이버네이트 사용하면,이 매핑은 불필요
+JAVA 8 이전의 @Temproal은 JAVA의 DATE타입과 Calender 타입을 매핑하는 거였다.
+그러나 JAVA 8 이후부터는 LocalDate와 LocalDateTime이라는 새로운 타입이 등장했고, 최신 하이버네이트에서는
+이 타입에 대해서는 자동으로 @Temporal이 없어도 자동으로 DDL에 반영을 해준다.
+그래서 요즘에는 @Temporal은 거의 안 쓰고, 대신 LocalDate와 LocalDateTime을 써준다
+
+@Lob는 속성이 없다.
+CLOB : Characer
+BLOB : Byte
+
+
+
+
+
+
+
+
+
+
